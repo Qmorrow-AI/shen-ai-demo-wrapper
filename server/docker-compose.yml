@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  mock-server:
+    build: .
+    ports:
+      - "13337:8000"
+    networks:
+      - shenai-network
+networks:
+  shenai-network:
+    driver: bridge 
