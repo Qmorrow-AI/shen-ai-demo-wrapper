@@ -7,7 +7,11 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "build-apk": "cd android && ./gradlew assembleRelease && cd .. && echo 'Release APK generated at: android/app/build/outputs/apk/release/app-release.apk'",
+    "build-apk-clean": "cd android && ./gradlew clean assembleRelease && cd .. && echo 'Release APK generated at: android/app/build/outputs/apk/release/app-release.apk'",
+    "build-apk-debug": "cd android && ./gradlew assembleDebug && cd .. && echo 'Debug APK generated at: android/app/build/outputs/apk/debug/app-debug.apk'",
+    "build-apk-debug-clean": "cd android && ./gradlew clean assembleDebug && cd .. && echo 'Debug APK generated at: android/app/build/outputs/apk/debug/app-debug.apk'"
   },
   "dependencies": {
     "react": "18.2.0",
