@@ -42,6 +42,17 @@ npm run ios
 yarn ios
 ```
 
+> ⚠️ **Important – unpack the SDK binaries first!**  
+> The iOS build requires the pre-compiled `ShenaiSDK.framework` which is kept out of version control to keep the repository size small.  
+> After cloning the repo (or after running the ZIP creation command shown earlier) make sure you unpack `shenai-sdk-large-files-only.zip` **from the `minimal_app` folder** before building:
+>
+> ```bash
+> # from mobile-app-demo/react-native/minimal_app
+> unzip shenai-sdk-large-files-only.zip
+> ```
+>
+> If you split the archive with `-s 50m`, keep all parts in the same directory; `unzip` will re-assemble them automatically.
+
 If everything is set up _correctly_, you should see your new app running in your _Android Emulator_ or _iOS Simulator_ shortly provided you have set up your emulator/simulator correctly.
 
 This is one way to run your app — you can also run it directly from within Android Studio and Xcode respectively.
@@ -77,3 +88,59 @@ To learn more about React Native, take a look at the following resources:
 - [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
 - [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
 - [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+
+## Note on npm vs yarn installs for the local Shen AI SDK
+
+If you work with **npm** instead of **yarn**, you will notice that `npm install` fails with an error coming from `react-native-shenai-sdk`:
+
+```
+Error: The module field in package.json points to a non-existent file: lib/module/index.js
+```
+
+Why does it happen?
+
+1. The SDK is included as a local dependency:
+   ```jsonc
+   "react-native-shenai-sdk": "file:./react-native-shenai-sdk"
+   ```
+2. That folder already contains the pre-built `lib/module/*.js` files, **but** its `package.json` still has a lifecycle script:
+   ```jsonc
+   "prepare": "bob build"
+   ```
+3. `npm install` executes *all* lifecycle scripts for local `file:` packages.  The **bob** tool starts by deleting `lib/module`, then looks for the original `src/` TypeScript to rebuild—but the source is not shipped in this directory—so the build fails.
+4. Yarn (classic) skips lifecycle scripts for linked / workspace packages, which is why the same folder installs fine with `yarn install`.
+
+### Quick fix for npm users
+Add an `installConfig` section to the SDK’s `package.json` so npm ignores its scripts:
+
+```jsonc
+// minimal_app/react-native-shenai-sdk/package.json
+{
+  // …
+  "scripts": {
+    "prepare": "bob build"
+  },
+  "installConfig": {
+    "ignoreScripts": true
+  }
+}
+```
+
+Alternatively, simply delete the `prepare` line if you do not need to rebuild the SDK locally.
+
+Once the script is disabled, `npm install` works exactly like `yarn install` and keeps the pre-built files intact.
+
+---
+
+## Helper script – `develop.sh`
+
+To make onboarding easier we ship a small helper script:
+
+```bash
+./develop.sh
+```
+
+1. Runs `yarn install --silent` to get all dependencies (Yarn skips the SDK’s build step automatically).
+2. Starts the Metro bundler via `npm start`.
+
+Feel free to adapt the script if your team prefers an all-npm workflow.

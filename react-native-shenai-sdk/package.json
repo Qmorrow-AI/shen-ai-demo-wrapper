@@ -1,0 +1,63 @@
+{
+  "name": "react-native-shenai-sdk",
+  "version": "2.9.0",
+  "private": true,
+  "description": "Shen.AI SDK by MX Labs for React Native.",
+  "main": "lib/module/index.js",
+  "types": "lib/typescript/src/index.d.ts",
+  "files": [
+    "src",
+    "lib",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "android",
+    "ios",
+    "*.podspec"
+  ],
+  "scripts": {
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "clean": "rimraf android/build ios/build lib",
+    "prepare": "bob build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mxlaboratories/shenai-sdk"
+  },
+  "keywords": [
+    "react-native",
+    "shenai",
+    "sdk"
+  ],
+  "author": "MX Labs <sdksupport@mxlabs.ai> (https://developer.shen.ai)",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "bugs": {
+    "url": "https://github.com/mxlaboratories/shenai-sdk/issues"
+  },
+  "homepage": "https://developer.shen.ai",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.67",
+    "@types/react-native": "^0.73.0",
+    "eslint": "^8.57.0",
+    "react-native-builder-bob": "^0.23.2",
+    "typescript": "^5.1.6"
+  },
+  "source": "src/index.tsx",
+  "module": "lib/module/index.js",
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      "module",
+      "typescript"
+    ]
+  },
+  "eslintIgnore": [
+    "node_modules/",
+    "lib/"
+  ]
+}

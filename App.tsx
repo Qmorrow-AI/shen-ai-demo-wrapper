@@ -5,7 +5,7 @@
  * @format
  */
 
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -18,6 +18,17 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import { ShenaiSdkView, InitializationResult } from "react-native-shenai-sdk";
+import { NativeEventEmitter, NativeModules } from "react-native";
+import {
+  initialize,
+  MeasurementPreset,
+  useRealtimeHeartRate,
+  useMeasurementResults,
+} from "react-native-shenai-sdk";
+
+const { ShenaiSdkNativeModule } = NativeModules;
+const sdkEventEmitter = new NativeEventEmitter(ShenaiSdkNativeModule);
 
 // Predefined server addresses
 const SERVER_OPTIONS = [
@@ -26,6 +37,13 @@ const SERVER_OPTIONS = [
   {label: 'iOS Simulator (localhost:3000)', value: 'http://localhost:3000'},
   {label: 'Custom Address', value: 'custom'},
 ];
+
+interface MeasurementResult {
+  hrvSdnnMs?: number;
+  systolicBloodPressureMmhg?: number;
+  diastolicBloodPressureMmhg?: number;
+  heartRate?: number;
+}
 
 function App(): React.JSX.Element {
   const [message, setMessage] = useState('');
@@ -37,6 +55,17 @@ function App(): React.JSX.Element {
   const [customServerUrl, setCustomServerUrl] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  
+  // Shen AI Scanner states
+  const [showScanner, setShowScanner] = useState(false);
+  const [initResult, setInitResult] = useState<InitializationResult | null | false>(null);
+  const [scannerLoading, setScannerLoading] = useState(false);
+  // Track if measurement has been sent successfully to avoid duplicates
+  const [measurementSent, setMeasurementSent] = useState(false);
+
+  // Shen AI SDK hooks
+  const hr = useRealtimeHeartRate();
+  const results = useMeasurementResults();
 
   const getSelectedServerLabel = () => {
     const option = SERVER_OPTIONS.find(opt => opt.value === selectedServer);
@@ -106,9 +135,163 @@ function App(): React.JSX.Element {
     }
   };
 
+  // Shen AI Scanner functions
+  const initializeShenAiSdk = async () => {
+    setScannerLoading(true);
+    try {
+      const subscription = sdkEventEmitter.addListener("ShenAIEvent", (event) => {
+        const eventName = event?.EventName;
+        if (eventName) {
+          console.log("Event Name:", eventName);
+        }
+      });
+
+      console.log("Initializing Shen AI SDK");
+      const result = await initialize("01440e21d73c4f5fa96b46a3539c879e", "", {
+        measurementPreset: MeasurementPreset.THIRTY_SECONDS_UNVALIDATED,
+      });
+      console.log("Initialization result", result);
+      setInitResult(result);
+
+      return () => {
+        subscription.remove();
+      };
+    } catch (error) {
+      console.log(error);
+      setInitResult(false);
+    } finally {
+      setScannerLoading(false);
+    }
+  };
+
+  const sendMeasurementToServer = async (results: MeasurementResult) => {
+    const baseUrl = getBaseUrl();
+    if (!baseUrl) {
+      console.error('No server URL configured');
+      return;
+    }
+
+    const payload = {
+      timestamp: Date.now(),
+      hrv_sdnn_ms: results.hrvSdnnMs,
+      heart_rate_bpm: results.heartRate,
+      blood_pressure_mmhg: {
+        systolic: results.systolicBloodPressureMmhg,
+        diastolic: results.diastolicBloodPressureMmhg,
+      },
+    };
+
+    console.log("📦 Sending measurement payload:", JSON.stringify(payload, null, 2));
+
+    try {
+      const response = await fetch(`${baseUrl}/shenai/measurements`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      console.log("✅ Response status:", response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn("❌ Failed to send Shen-AI data:", errorText);
+      } else {
+        console.log("✅ Successfully sent measurement data to server");
+        // mark as sent to prevent duplicate submissions
+        setMeasurementSent(true);
+      }
+    } catch (error) {
+      console.error("💥 Error sending Shen-AI data:", error);
+    }
+  };
+
+  const startScanner = async () => {
+    const baseUrl = getBaseUrl();
+    if (!baseUrl) {
+      setServerResponse('Error: Please select or enter a server address first');
+      return;
+    }
+    
+    await initializeShenAiSdk();
+    // reset flag each new scan session
+    setMeasurementSent(false);
+    setShowScanner(true);
+  };
+
+  // Effect to send measurement data when available
+  useEffect(() => {
+    if (results && showScanner && !measurementSent) {
+      console.log("📡 Sending first complete measurement to API", results);
+      sendMeasurementToServer({
+        hrvSdnnMs: results.hrvSdnnMs ?? undefined,
+        systolicBloodPressureMmhg: results.systolicBloodPressureMmhg ?? undefined,
+        diastolicBloodPressureMmhg: results.diastolicBloodPressureMmhg ?? undefined,
+        // capture latest HR value available at this moment
+        heartRate: hr ?? undefined,
+      });
+    }
+  }, [results, showScanner, measurementSent]);
+
+  // Shen AI Scanner Screen
+  if (showScanner) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.scannerHeader}>
+          <Text style={styles.scannerTitle}>Shen AI Scanner</Text>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setShowScanner(false)}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {scannerLoading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Initializing Shen AI SDK...</Text>
+          </View>
+        )}
+        
+        {initResult === false && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>Shen AI SDK initialization failed</Text>
+            <Button title="Retry" onPress={initializeShenAiSdk} />
+          </View>
+        )}
+        
+        {initResult === null && !scannerLoading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Initializing...</Text>
+          </View>
+        )}
+        
+        {hr && (
+          <View style={styles.measurementDisplay}>
+            <Text style={styles.measurementText}>Heart Rate: {hr} BPM</Text>
+          </View>
+        )}
+        
+        {initResult === InitializationResult.OK && (
+          <ShenaiSdkView style={styles.scannerView} />
+        )}
+        
+        {results && (
+          <View style={styles.resultsContainer}>
+            <Text style={styles.resultsTitle}>Measurement Results:</Text>
+            <Text style={styles.resultsText}>HRV: {results?.hrvSdnnMs} MS</Text>
+            <Text style={styles.resultsText}>
+              BP: {results?.systolicBloodPressureMmhg} / {results?.diastolicBloodPressureMmhg} MMHG
+            </Text>
+          </View>
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // Main App Screen
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Send Message to Mock Server</Text>
+      <Text style={styles.title}>Medical Service App</Text>
       
       <View style={styles.serverSection}>
         <Text style={styles.label}>Server Address:</Text>
@@ -156,6 +339,18 @@ function App(): React.JSX.Element {
         )}
       </View>
 
+      <View style={styles.buttonContainer}>
+        <Button 
+          title="Start Shen AI Scanner" 
+          onPress={startScanner} 
+          disabled={loading || !getBaseUrl()} 
+        />
+      </View>
+
+      <View style={styles.divider}>
+        <Text style={styles.dividerText}>OR</Text>
+      </View>
+
       <TextInput
         style={styles.input}
         placeholder="Enter your message"
@@ -164,7 +359,7 @@ function App(): React.JSX.Element {
         editable={!loading}
       />
       <View style={styles.buttonContainer}>
-        <Button title={loading ? 'Sending...' : 'Send'} onPress={sendMessage} disabled={loading} />
+        <Button title={loading ? 'Sending...' : 'Send Message'} onPress={sendMessage} disabled={loading} />
       </View>
       {serverResponse && <Text style={styles.response}>{serverResponse}</Text>}
     </SafeAreaView>
@@ -262,6 +457,95 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textAlign: 'center',
     color: 'green',
+  },
+  divider: {
+    width: '100%',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  // Scanner styles
+  scannerHeader: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  scannerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  backButton: {
+    padding: 8,
+    backgroundColor: '#007AFF',
+    borderRadius: 6,
+  },
+  backButtonText: {
+    color: 'white',
+    fontSize: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#666',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 18,
+    color: 'red',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  scannerView: {
+    flex: 1,
+    width: '100%',
+  },
+  measurementDisplay: {
+    position: 'absolute',
+    top: 100,
+    left: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 10,
+    borderRadius: 8,
+    zIndex: 1000,
+  },
+  measurementText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  resultsContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 15,
+    borderRadius: 8,
+  },
+  resultsTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  resultsText: {
+    color: 'white',
+    fontSize: 14,
+    marginBottom: 4,
   },
 });
 

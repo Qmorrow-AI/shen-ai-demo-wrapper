@@ -1,0 +1,7 @@
+framework module ShenaiSDK {
+    umbrella header "ShenaiSDK.h"
+    header "ShenaiView.h"
+    header "ShenaiHealthRisks.h"
+    export *
+    module * { export * }
+}

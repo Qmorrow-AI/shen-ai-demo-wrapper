@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "react": "18.2.0",
-    "react-native": "0.73.4"
+    "react-native": "0.73.6",
+    "react-native-shenai-sdk": "file:./react-native-shenai-sdk"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
