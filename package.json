@@ -16,6 +16,7 @@
   "dependencies": {
     "react": "18.2.0",
     "react-native": "0.73.6",
+    "react-native-base64": "^0.2.1",
     "react-native-shenai-sdk": "file:./react-native-shenai-sdk"
   },
   "devDependencies": {

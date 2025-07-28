@@ -1,7 +1,7 @@
 import { requireNativeComponent, UIManager, Platform, NativeModules } from "react-native";
 const {
   ShenaiSdkNativeModule
-} = NativeModules;r
+} = NativeModules;
 const LINKING_ERROR = `The package 'react-native-shenai-sdk' doesn't seem to be linked. Make sure: \n\n` + Platform.select({
   ios: "- You have run 'pod install'\n",
   default: ""
