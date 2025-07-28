@@ -27,17 +27,40 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
   disabled = false,
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customUrl, setCustomUrl] = useState(customServerUrl);
 
   const getSelectedServerLabel = () => {
+    if (selectedServer === 'custom') {
+      return customServerUrl || 'Custom Server';
+    }
     const option = SERVER_OPTIONS.find(opt => opt.value === selectedServer);
     return option ? option.label : 'Select Server';
   };
 
   const handleServerChange = (value: string) => {
-    onServerChange(value);
-    setShowDropdown(false);
+    if (value === 'custom') {
+      setShowCustomInput(true);
+      setShowDropdown(false);
+    } else {
+      onServerChange(value);
+      setShowDropdown(false);
+    }
   };
 
+  const handleCustomUrlSubmit = () => {
+    if (customUrl.trim()) {
+      onCustomUrlChange(customUrl.trim());
+      onServerChange('custom');
+      setShowCustomInput(false);
+    }
+  };
+
+  const handleCustomUrlCancel = () => {
+    setCustomUrl(customServerUrl);
+    setShowCustomInput(false);
+    setShowDropdown(false);
+  };
 
 
   return (
@@ -76,7 +99,42 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
         </TouchableOpacity>
       </Modal>
       
-
+      {/* Custom Server Input Modal */}
+      <Modal
+        visible={showCustomInput}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCustomUrlCancel}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={handleCustomUrlCancel}>
+          <View style={styles.customInputContainer}>
+            <Text style={styles.customInputTitle}>Enter Custom Server URL</Text>
+            <TextInput
+              style={styles.customInput}
+              value={customUrl}
+              onChangeText={setCustomUrl}
+              placeholder="https://your-server.com/openmrs"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+            <View style={styles.customInputButtons}>
+              <TouchableOpacity
+                style={[styles.customInputButton, styles.cancelButton]}
+                onPress={handleCustomUrlCancel}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.customInputButton, styles.submitButton]}
+                onPress={handleCustomUrlSubmit}>
+                <Text style={styles.submitButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -139,6 +197,58 @@ const styles = StyleSheet.create({
   },
   dropdownItemText: {
     fontSize: 16,
+  },
+  customInputContainer: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 20,
+    width: '80%',
+    alignItems: 'center',
+  },
+  customInputTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  customInput: {
+    width: '100%',
+    height: 50,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    marginBottom: 20,
+    fontSize: 16,
+  },
+  customInputButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  customInputButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+  },
+  cancelButton: {
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  cancelButtonText: {
+    color: '#333',
+    fontSize: 16,
+  },
+  submitButton: {
+    backgroundColor: '#007bff',
+    borderWidth: 1,
+    borderColor: '#007bff',
+  },
+  submitButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 
 });

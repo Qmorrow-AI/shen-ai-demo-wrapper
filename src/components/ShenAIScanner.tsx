@@ -30,6 +30,7 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
   const [measurementResults, setMeasurementResults] = useState<MeasurementResult | null>(null);
   const [isSendingMeasurement, setIsSendingMeasurement] = useState(false);
   const [hasProcessedFinalResults, setHasProcessedFinalResults] = useState(false);
+  const [showResults, setShowResults] = useState(false);
 
   const shenaiService = new ShenAIService();
   const openmrsService = new OpenMRSService(openmrsCredentials);
@@ -49,8 +50,6 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
 
   useEffect(() => {
     if (results) {
-      console.log("📡 Raw SDK results:", results);
-      console.log("📡 Real-time heart rate:", hr);
       // Process results when they come in
       const processedResults = shenaiService.processMeasurementResults(results, hr || undefined);
       setMeasurementResults(processedResults);
@@ -78,6 +77,11 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
     }
   };
 
+  // Show results function
+  const showMeasurementResults = () => {
+    setShowResults(!showResults);
+  };
+
   const initializeShenAiSdk = async () => {
     setScannerLoading(true);
     try {
@@ -85,6 +89,7 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
       setInitResult(result);
       setMeasurementSent(false);
       setHasProcessedFinalResults(false);
+      setShowResults(false);
     } catch (error) {
       console.error("ShenAI initialization error:", error);
       setInitResult(false);
@@ -223,10 +228,19 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
           )}
           
           <ShenaiSdkView style={styles.scannerView} />
+          
+          {/* Show Results Button */}
+          <TouchableOpacity 
+            style={styles.showResultsButton} 
+            onPress={showMeasurementResults}>
+            <Text style={styles.showResultsButtonText}>
+              📊 Measurement Results
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
       
-      {measurementResults && (
+      {showResults && measurementResults && (
         <View style={styles.resultsContainer}>
           <Text style={styles.resultsTitle}>Measurement Results:</Text>
           <Text style={styles.resultsText}>Heart Rate: {measurementResults?.heartRate || 'N/A'} BPM</Text>
@@ -395,6 +409,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   manualSendButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  showResultsButton: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FF9500',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  showResultsButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',

@@ -9,7 +9,7 @@ import {
 import { Patient } from '../types';
 import OpenMRSService from '../services/openmrsService';
 import { OpenMRSCredentials } from '../types';
-import { PATIENT_UUIDS } from '../constants';
+import { getServerConfig } from '../constants';
 
 interface PatientSelectorProps {
   credentials: OpenMRSCredentials;
@@ -56,8 +56,25 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
   const loadPatients = async () => {
     setLoading(true);
     try {
-      // Use specific patient UUIDs instead of location-based fetching
-      const patientsData = await openmrsService.getPatientsByUUIDs(PATIENT_UUIDS);
+      // Get patient UUIDs from server config
+      const serverConfig = getServerConfig(credentials.baseUrl);
+      console.log("🔍 Server config:", serverConfig);
+      
+      if (!serverConfig) {
+        // For custom servers, we can't load predefined patients
+        Alert.alert(
+          'Custom Server', 
+          'Custom servers don\'t have predefined patients. Please configure patients manually in your OpenMRS server.'
+        );
+        setPatients([]);
+        return;
+      }
+      
+      if (!serverConfig.patientUuids || serverConfig.patientUuids.length === 0) {
+        throw new Error('No patient UUIDs configured for this server');
+      }
+      
+      const patientsData = await openmrsService.getPatientsByUUIDs(serverConfig.patientUuids);
       setPatients(patientsData);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

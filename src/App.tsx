@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Settings, Patient, OpenMRSCredentials, MeasurementData } from './types';
-import { DEFAULT_SERVER, DEFAULT_OPENMRS_CREDENTIALS } from './constants';
+import { DEFAULT_SERVER, DEFAULT_OPENMRS_CREDENTIALS, getServerConfig } from './constants';
 import ServerSelector from './components/ServerSelector';
 import SettingsScreen from './components/SettingsScreen';
 import PatientSelector from './components/PatientSelector';
@@ -41,7 +41,40 @@ function App(): React.JSX.Element {
   }
 
   const handleServerChange = (server: string) => {
-    setSettings(prev => ({ ...prev, serverUrl: server }));
+    console.log("🔍 Server changed to:", server);
+    
+    // Get the server config for the selected server
+    const serverConfig = getServerConfig(server);
+    
+    if (serverConfig) {
+      // Update credentials to match the selected server
+      const newCredentials: OpenMRSCredentials = {
+        baseUrl: serverConfig.baseUrl,
+        username: serverConfig.credentials.username,
+        password: serverConfig.credentials.password,
+        locationUuid: serverConfig.locationUuid,
+      };
+      
+      console.log("🔍 Updating credentials to:", newCredentials);
+      setSettings(prev => ({ 
+        ...prev, 
+        serverUrl: server,
+        openmrsCredentials: newCredentials 
+      }));
+    } else {
+      // For custom servers, just update the server URL
+      // Credentials will be set manually in settings
+      setSettings(prev => ({ ...prev, serverUrl: server }));
+    }
+  };
+
+  const handleCustomUrlChange = (customUrl: string) => {
+    console.log("🔍 Custom URL changed to:", customUrl);
+    setSettings(prev => ({ 
+      ...prev, 
+      customServerUrl: customUrl,
+      serverUrl: 'custom'
+    }));
   };
 
 
@@ -123,9 +156,9 @@ function App(): React.JSX.Element {
       
       <ServerSelector
         selectedServer={settings.serverUrl}
-        customServerUrl=""
+        customServerUrl={settings.customServerUrl}
         onServerChange={handleServerChange}
-        onCustomUrlChange={() => {}}
+        onCustomUrlChange={handleCustomUrlChange}
         disabled={loading}
       />
 
@@ -166,6 +199,7 @@ function App(): React.JSX.Element {
       credentials={settings.openmrsCredentials}
       onCredentialsChange={handleCredentialsChange}
       onBack={() => setCurrentScreen('main')}
+      currentServerUrl={settings.serverUrl}
     />
   );
 

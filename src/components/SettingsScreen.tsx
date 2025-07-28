@@ -9,24 +9,35 @@ import {
   Alert,
 } from 'react-native';
 import { OpenMRSCredentials, Location } from '../types';
-import { DEFAULT_OPENMRS_CREDENTIALS, locationUuid } from '../constants';
+import { DEFAULT_OPENMRS_CREDENTIALS, getServerConfig } from '../constants';
 import OpenMRSService from '../services/openmrsService';
 
 interface SettingsScreenProps {
   credentials: OpenMRSCredentials;
   onCredentialsChange: (credentials: OpenMRSCredentials) => void;
   onBack: () => void;
+  currentServerUrl?: string;
 }
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({
   credentials,
   onCredentialsChange,
   onBack,
+  currentServerUrl,
 }) => {
   const [formData, setFormData] = useState<OpenMRSCredentials>(credentials);
   const [loading, setLoading] = useState(false);
 
   const openmrsService = new OpenMRSService(formData);
+
+  // Get current server config
+  const currentServerConfig = currentServerUrl ? getServerConfig(currentServerUrl) : null;
+  const isCustomServer = currentServerUrl === 'custom';
+
+  useEffect(() => {
+    // Update form data when credentials change
+    setFormData(credentials);
+  }, [credentials]);
 
   const testConnection = async () => {
     if (!formData.baseUrl || !formData.username || !formData.password) {
@@ -69,6 +80,24 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </View>
 
       <View style={styles.form}>
+        {/* Current Server Info */}
+        {currentServerUrl && (
+          <View style={styles.serverInfo}>
+            <Text style={styles.serverInfoTitle}>Current Server Configuration</Text>
+            <Text style={styles.serverInfoText}>
+              Server: {isCustomServer ? 'Custom Server' : currentServerConfig?.label || 'Unknown'}
+            </Text>
+            <Text style={styles.serverInfoText}>
+              URL: {formData.baseUrl}
+            </Text>
+            {currentServerConfig && (
+              <Text style={styles.serverInfoText}>
+                Location UUID: {currentServerConfig.locationUuid}
+              </Text>
+            )}
+          </View>
+        )}
+
         <Text style={styles.label}>OpenMRS Base URL:</Text>
         <TextInput
           style={styles.input}
@@ -103,10 +132,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <Text style={styles.label}>Location:</Text>
         <View style={styles.presetLocationInfo}>
           <Text style={styles.presetLocationText}>
-            Preset Location (Configured)
+            {isCustomServer ? 'Custom Server' : 'Preset Location (Configured)'}
           </Text>
           <Text style={styles.presetLocationSubtext}>
-            Using preset location UUID: 8639ead4-ad6c-419f-9944-7d92ff32dcac
+            Using location UUID: {formData.locationUuid}
           </Text>
         </View>
 
@@ -243,6 +272,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     marginTop: 4,
+  },
+  serverInfo: {
+    backgroundColor: '#e0f2f7',
+    padding: 12,
+    borderRadius: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+    marginBottom: 16,
+  },
+  serverInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2d5a2d',
+    marginBottom: 4,
+  },
+  serverInfoText: {
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 2,
   },
 });
 

@@ -1,5 +1,5 @@
 import { OpenMRSCredentials, Location, Patient, VisitData } from '../types';
-import { locationUuid, PATIENT_UUIDS } from '../constants';
+import { getServerConfig } from '../constants';
 // @ts-ignore
 import base64 from 'react-native-base64';
 
@@ -121,8 +121,40 @@ class OpenMRSService {
     }
   }
 
+  private async getServerTime(): Promise<Date> {
+    try {
+      // Try to get server time from system settings first
+      const response = await this.makeRequest('/systemsetting?q=systemDateTime');
+      const serverTimeStr = response.results?.[0]?.value;
+      
+      if (serverTimeStr) {
+        console.log("🔍 Server time from system setting:", serverTimeStr);
+        return new Date(serverTimeStr);
+      }
+      
+      // Try to get time from session endpoint
+      const sessionResponse = await this.makeRequest('/session');
+      if (sessionResponse.authenticated) {
+        // Use current time but subtract a small offset to ensure it's in the past
+        const adjustedTime = new Date(Date.now() - 5000); // 5 seconds ago
+        console.log("🔍 Using adjusted local time (5 seconds ago):", adjustedTime.toISOString());
+        return adjustedTime;
+      }
+      
+      throw new Error('Could not get server time');
+    } catch (error) {
+      console.warn("⚠️ Could not get server time, using adjusted local time:", error);
+      // Use local time but subtract offset to ensure it's in the past
+      const adjustedTime = new Date(Date.now() - 5000); // 5 seconds ago
+      return adjustedTime;
+    }
+  }
+
   async getLocations(): Promise<Location[]> {
     // Always return the preset location, no API call needed
+    const serverConfig = getServerConfig(this.credentials.baseUrl);
+    const locationUuid = serverConfig?.locationUuid || this.credentials.locationUuid || '';
+    
     return [{
       uuid: locationUuid,
       name: 'Preset Location',
@@ -150,6 +182,10 @@ class OpenMRSService {
 
   async createVisit(visitData: VisitData): Promise<any> {
     try {
+      // Get server's current time
+      const serverTime = await this.getServerTime();
+      console.log("🔍 Using server time for visit creation:", serverTime.toISOString());
+      
       // First, check for existing active visits for this patient
       const existingVisits = await this.makeRequest(`/visit?v=default&patient=${visitData.patientUuid}`);
       const activeVisits = existingVisits.results?.filter((visit: any) => !visit.stopDatetime) || [];
@@ -157,8 +193,7 @@ class OpenMRSService {
       // End any existing active visits first
       for (const activeVisit of activeVisits) {
         try {
-          const endTime = new Date();
-          endTime.setSeconds(endTime.getSeconds() - 1); // End 1 second ago to ensure no overlap
+          const endTime = new Date(serverTime.getTime() - 1000); // End 1 second before server time
           
           await this.makeRequest(`/visit/${activeVisit.uuid}`, {
             method: 'POST',
@@ -171,13 +206,13 @@ class OpenMRSService {
         }
       }
 
-      // Create new visit with proper timing
-      const startTime = new Date();
+      // Create new visit with server time
+      const serverConfig = getServerConfig(this.credentials.baseUrl);
       const visitPayload = {
         patient: visitData.patientUuid,
         visitType: "7b0f5697-27e3-40c4-8bae-f4049abfb4ed", // Facility visit type (same as Python bridge)
-        startDatetime: startTime.toISOString(),
-        location: this.credentials.locationUuid || locationUuid || '',
+        startDatetime: serverTime.toISOString(),
+        location: this.credentials.locationUuid || serverConfig?.locationUuid || '',
       };
 
       const visitResponse = await this.makeRequest('/visit', {
@@ -185,12 +220,12 @@ class OpenMRSService {
         body: JSON.stringify(visitPayload),
       });
 
-      // Create encounter for the visit
+      // Create encounter for the visit using server time
       const encounterPayload = {
         patient: visitData.patientUuid,
         encounterType: "67a71486-1a54-468f-ac3e-7091a9a79584", // Vitals encounter type
-        encounterDatetime: startTime.toISOString(),
-        location: this.credentials.locationUuid || locationUuid || '',
+        encounterDatetime: serverTime.toISOString(),
+        location: this.credentials.locationUuid || serverConfig?.locationUuid || '',
         visit: visitResponse.uuid,
         obs: this.createObservations(visitData.measurements),
       };
@@ -209,7 +244,7 @@ class OpenMRSService {
       }
 
       // End the visit after creating the encounter with a small delay
-      const endTime = new Date(startTime.getTime() + 1000); // End 1 second after start
+      const endTime = new Date(serverTime.getTime() + 1000); // End 1 second after server time
       const endVisitPayload = {
         stopDatetime: endTime.toISOString(),
       };
@@ -318,7 +353,7 @@ class OpenMRSService {
           family_name: data.person?.names?.[0]?.familyName || 'Unknown',
           gender: data.person?.gender || 'Unknown',
           birth_date: data.person?.birthdate || 'Unknown',
-          openmrs_location: this.credentials.locationUuid || locationUuid,
+          openmrs_location: this.credentials.locationUuid || getServerConfig(this.credentials.baseUrl)?.locationUuid || '',
           display: data.display || `${data.person?.names?.[0]?.givenName || 'Unknown'} ${data.person?.names?.[0]?.familyName || 'Unknown'}`.trim(),
         });
       } catch (error) {
@@ -332,12 +367,49 @@ class OpenMRSService {
 
   async testConnection(): Promise<boolean> {
     try {
+      // Test server time first
+      await this.testServerTime();
+      
       // Try a simple endpoint first - just get a single patient
-      const data = await this.makeRequest(`/patient/${PATIENT_UUIDS[0]}`);
+      const serverConfig = getServerConfig(this.credentials.baseUrl);
+      console.log("🔍 Testing connection with config:", serverConfig);
+      
+      if (!serverConfig) {
+        // For custom servers, just test the base connection
+        console.log("🔍 Custom server - testing base connection");
+        const data = await this.makeRequest('/session');
+        return true;
+      }
+      
+      if (!serverConfig.patientUuids || serverConfig.patientUuids.length === 0) {
+        console.error("❌ No patient UUIDs configured for server:", this.credentials.baseUrl);
+        return false;
+      }
+      
+      const data = await this.makeRequest(`/patient/${serverConfig.patientUuids[0]}`);
       return true;
     } catch (error) {
       console.error('❌ Connection test failed:', error);
       return false;
+    }
+  }
+
+  async testServerTime(): Promise<void> {
+    try {
+      const serverTime = await this.getServerTime();
+      const localTime = new Date();
+      const timeDiff = Math.abs(serverTime.getTime() - localTime.getTime()) / 1000;
+      
+      console.log("🔍 Server time test:");
+      console.log("  Server time:", serverTime.toISOString());
+      console.log("  Local time:", localTime.toISOString());
+      console.log("  Time difference:", timeDiff, "seconds");
+      
+      if (timeDiff > 60) {
+        console.warn("⚠️ Large time difference detected - server and local time may be out of sync");
+      }
+    } catch (error) {
+      console.error("❌ Error testing server time:", error);
     }
   }
 
