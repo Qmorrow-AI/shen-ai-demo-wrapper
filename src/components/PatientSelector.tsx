@@ -56,9 +56,6 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
   const loadPatients = async () => {
     setLoading(true);
     try {
-      // Debug authentication first
-      await openmrsService.debugAuth();
-      
       // Use specific patient UUIDs instead of location-based fetching
       const patientsData = await openmrsService.getPatientsByUUIDs(PATIENT_UUIDS);
       setPatients(patientsData);

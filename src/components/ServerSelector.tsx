@@ -30,7 +30,7 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
 
   const getSelectedServerLabel = () => {
     const option = SERVER_OPTIONS.find(opt => opt.value === selectedServer);
-    return option ? option.label : 'Custom Address';
+    return option ? option.label : 'Select Server';
   };
 
   const handleServerChange = (value: string) => {
@@ -38,7 +38,7 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
     setShowDropdown(false);
   };
 
-  const showCustomInput = selectedServer === 'custom';
+
 
   return (
     <View style={styles.container}>
@@ -76,15 +76,7 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
         </TouchableOpacity>
       </Modal>
       
-      {showCustomInput && (
-        <TextInput
-          style={[styles.customInput, disabled && styles.disabled]}
-          placeholder="Enter custom server URL (e.g., http://192.168.1.100:3000)"
-          value={customServerUrl}
-          onChangeText={onCustomUrlChange}
-          editable={!disabled}
-        />
-      )}
+
     </View>
   );
 };
@@ -148,14 +140,7 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 16,
   },
-  customInput: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 4,
-    padding: 12,
-    marginTop: 8,
-  },
+
 });
 
 export default ServerSelector; 

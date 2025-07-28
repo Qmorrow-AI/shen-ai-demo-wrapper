@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { ShenaiSdkView, InitializationResult } from "react-native-shenai-sdk";
-import { MeasurementResult, Patient } from '../types';
+import { MeasurementResult, Patient, MeasurementData } from '../types';
 import ShenAIService from '../services/shenaiService';
 import OpenMRSService from '../services/openmrsService';
 import { OpenMRSCredentials } from '../types';
@@ -29,6 +29,7 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
   const [measurementSent, setMeasurementSent] = useState(false);
   const [measurementResults, setMeasurementResults] = useState<MeasurementResult | null>(null);
   const [isSendingMeasurement, setIsSendingMeasurement] = useState(false);
+  const [hasProcessedFinalResults, setHasProcessedFinalResults] = useState(false);
 
   const shenaiService = new ShenAIService();
   const openmrsService = new OpenMRSService(openmrsCredentials);
@@ -40,25 +41,42 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
 
   useEffect(() => {
     initializeShenAiSdk();
+    
     return () => {
       shenaiService.cleanup();
     };
-  }, []);
+  }, []); // Only run once on mount
 
   useEffect(() => {
-    if (results && !measurementSent && selectedPatient && !isSendingMeasurement) {
-      console.log("📡 Sending measurement to OpenMRS", results);
+    if (results) {
+      console.log("📡 Raw SDK results:", results);
+      console.log("📡 Real-time heart rate:", hr);
+      // Process results when they come in
       const processedResults = shenaiService.processMeasurementResults(results, hr || undefined);
       setMeasurementResults(processedResults);
       
-      // Add a small delay to prevent rapid-fire requests
-      const timeoutId = setTimeout(() => {
-        sendMeasurementToOpenMRS(processedResults);
-      }, 1000); // 1 second delay
+      // Auto-send only if we have valid measurement data and haven't sent yet
+      const hasValidData = processedResults.heartRate || processedResults.systolicBloodPressureMmhg || 
+                          processedResults.diastolicBloodPressureMmhg || processedResults.breathingRate || 
+                          processedResults.hrvSdnnMs;
       
-      return () => clearTimeout(timeoutId);
+      if (selectedPatient && !measurementSent && !isSendingMeasurement && hasValidData && !hasProcessedFinalResults) {
+        console.log("📡 Auto-sending measurement results");
+        setHasProcessedFinalResults(true);
+        sendMeasurementToOpenMRS(processedResults);
+      }
     }
-  }, [results, measurementSent, selectedPatient, isSendingMeasurement]);
+  }, [results, hr, selectedPatient, measurementSent, isSendingMeasurement, hasProcessedFinalResults]);
+
+  // Manual send function for testing
+  const manualSendMeasurement = () => {
+    if (measurementResults && selectedPatient) {
+      console.log("📡 Manual send triggered");
+      sendMeasurementToOpenMRS(measurementResults);
+    } else {
+      Alert.alert('Error', 'No measurement results available to send');
+    }
+  };
 
   const initializeShenAiSdk = async () => {
     setScannerLoading(true);
@@ -66,6 +84,7 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
       const result = await shenaiService.initialize();
       setInitResult(result);
       setMeasurementSent(false);
+      setHasProcessedFinalResults(false);
     } catch (error) {
       console.error("ShenAI initialization error:", error);
       setInitResult(false);
@@ -85,103 +104,77 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
     }
 
     setIsSendingMeasurement(true);
-    const MAX_RETRY_ATTEMPTS = 3;
-    let attemptCount = 0;
+
+    // Create measurement data in the same format as mock data
+    const measurementData: MeasurementData = {
+      heartRate: results.heartRate || 0,
+      systolicBloodPressureMmhg: results.systolicBloodPressureMmhg || 0,
+      diastolicBloodPressureMmhg: results.diastolicBloodPressureMmhg || 0,
+      hrvSdnnMs: results.hrvSdnnMs || 0,
+      breathingRate: results.breathingRate || 0,
+    };
+
+    console.log("📡 Measurement data being sent:", measurementData);
 
     const visitData = {
       patientUuid: selectedPatient.uuid,
       measurements: {
         timestamp: Date.now(),
-        hrv_sdnn_ms: results.hrvSdnnMs,
-        heart_rate_bpm: results.heartRate,
-        breathing_rate_bpm: results.breathingRate,
+        hrv_sdnn_ms: measurementData.hrvSdnnMs > 0 ? measurementData.hrvSdnnMs : undefined,
+        heart_rate_bpm: measurementData.heartRate > 0 ? measurementData.heartRate : undefined,
+        breathing_rate_bpm: measurementData.breathingRate > 0 ? measurementData.breathingRate : undefined,
         blood_pressure_mmhg: {
-          systolic: results.systolicBloodPressureMmhg,
-          diastolic: results.diastolicBloodPressureMmhg,
+          systolic: measurementData.systolicBloodPressureMmhg > 0 ? measurementData.systolicBloodPressureMmhg : undefined,
+          diastolic: measurementData.diastolicBloodPressureMmhg > 0 ? measurementData.diastolicBloodPressureMmhg : undefined,
         },
       },
     };
 
+    console.log("📡 Visit data being sent:", JSON.stringify(visitData, null, 2));
+
+    // Check if we have any valid measurements before sending
+    const hasValidMeasurements = (
+      (measurementData.heartRate > 0) ||
+      (measurementData.systolicBloodPressureMmhg > 0) ||
+      (measurementData.diastolicBloodPressureMmhg > 0) ||
+      (measurementData.breathingRate > 0) ||
+      (measurementData.hrvSdnnMs > 0)
+    );
+
+    if (!hasValidMeasurements) {
+      Alert.alert('Error', 'No valid measurement data available to send. Please complete a scan first.');
+      setIsSendingMeasurement(false);
+      return;
+    }
+
     try {
-      while (attemptCount < MAX_RETRY_ATTEMPTS) {
-        try {
-          attemptCount++;
-          
-          const response = await openmrsService.createVisit(visitData);
-          setMeasurementSent(true);
-          Alert.alert('Success', 'Measurement data sent to OpenMRS successfully!');
-          
-          // Reset after 5 seconds to allow new measurements
-          setTimeout(() => {
-            setMeasurementSent(false);
-          }, 5000);
-          
-          return; // Success, exit the retry loop
-        } catch (error) {
-          // Check if it's a visit overlap error
-          const errorMessage = (error as any)?.message || '';
-          if (errorMessage.includes('overlap') || errorMessage.includes('Visit.visitCannotOverlapAnotherVisitOfTheSamePatient')) {
-            // For overlap errors, we can retry immediately since the service now handles cleanup
-            continue;
-          }
-          
-          if (attemptCount >= MAX_RETRY_ATTEMPTS) {
-            // Final attempt failed
-            Alert.alert(
-              'Error', 
-              `Failed to send measurement to OpenMRS after ${MAX_RETRY_ATTEMPTS} attempts. Please check your connection and try again.`
-            );
-          } else {
-            // Wait a bit before retrying (exponential backoff)
-            const delayMs = Math.pow(2, attemptCount) * 1000; // 2s, 4s, 8s
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-          }
-        }
-      }
+      const response = await openmrsService.createVisit(visitData);
+      setMeasurementSent(true);
+      Alert.alert(
+        '✅ Success', 
+        'Real scan measurement data sent to OpenMRS successfully!\n\n' +
+        `Patient: ${selectedPatient.given_name} ${selectedPatient.family_name}\n` +
+        `Heart Rate: ${measurementData.heartRate} BPM\n` +
+        `Blood Pressure: ${measurementData.systolicBloodPressureMmhg}/${measurementData.diastolicBloodPressureMmhg} mmHg\n` +
+        `Breathing Rate: ${measurementData.breathingRate} BPM\n` +
+        `HRV SDNN: ${measurementData.hrvSdnnMs} ms`
+      );
+      
+      // Reset after 5 seconds to allow new measurements
+      setTimeout(() => {
+        setMeasurementSent(false);
+      }, 5000);
+    } catch (error: any) {
+      console.error('Error sending measurement data:', error);
+      Alert.alert('Error', `Failed to send measurement data: ${error.message}`);
     } finally {
       setIsSendingMeasurement(false);
     }
   };
 
-  const sendMockMeasurement = async () => {
-    if (!selectedPatient) {
-      Alert.alert('Error', 'Please select a patient first');
-      return;
-    }
 
-    const mockResults: MeasurementResult = {
-      heartRate: 72,
-      systolicBloodPressureMmhg: 118,
-      diastolicBloodPressureMmhg: 78,
-      hrvSdnnMs: 42.5,
-      breathingRate: 16,
-    };
 
-    // Set the mock results to display them
-    setMeasurementResults(mockResults);
-    
-    await sendMeasurementToOpenMRS(mockResults);
-  };
 
-  const sendConservativeMockMeasurement = async () => {
-    if (!selectedPatient) {
-      Alert.alert('Error', 'Please select a patient first');
-      return;
-    }
-
-    const mockResults: MeasurementResult = {
-      heartRate: 65,
-      systolicBloodPressureMmhg: 110,
-      diastolicBloodPressureMmhg: 70,
-      hrvSdnnMs: 35.0,
-      breathingRate: 14,
-    };
-
-    // Set the mock results to display them
-    setMeasurementResults(mockResults);
-    
-    await sendMeasurementToOpenMRS(mockResults);
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -212,91 +205,48 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
           <TouchableOpacity style={styles.retryButton} onPress={initializeShenAiSdk}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.debugButton} 
-            onPress={sendMockMeasurement}
-            disabled={isSendingMeasurement}
-          >
-            <Text style={styles.debugButtonText}>
-              {isSendingMeasurement ? 'Sending...' : '🧪 Send Mock Data (Debug)'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.debugButton, { backgroundColor: '#FF6B35', marginTop: 10 }]} 
-            onPress={sendConservativeMockMeasurement}
-            disabled={isSendingMeasurement}
-          >
-            <Text style={styles.debugButtonText}>
-              {isSendingMeasurement ? 'Sending...' : '🧪 Send Conservative Data'}
-            </Text>
-          </TouchableOpacity>
         </View>
       )}
       
       {initResult === null && !scannerLoading && (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Initializing...</Text>
-          <TouchableOpacity 
-            style={styles.debugButton} 
-            onPress={sendMockMeasurement}
-            disabled={isSendingMeasurement}
-          >
-            <Text style={styles.debugButtonText}>
-              {isSendingMeasurement ? 'Sending...' : '🧪 Send Mock Data'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.debugButton, { backgroundColor: '#FF6B35', marginTop: 10 }]} 
-            onPress={sendConservativeMockMeasurement}
-            disabled={isSendingMeasurement}
-          >
-            <Text style={styles.debugButtonText}>
-              {isSendingMeasurement ? 'Sending...' : '🧪 Send Conservative Data'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      
-      {hr && (
-        <View style={styles.measurementDisplay}>
-          <Text style={styles.measurementText}>Heart Rate: {hr} BPM</Text>
         </View>
       )}
       
       {initResult === 0 && (
-        <>
+        <View style={styles.scannerContainer}>
+          {hr && (
+            <View style={styles.measurementDisplay}>
+              <Text style={styles.measurementText}>Heart Rate: {hr} BPM</Text>
+            </View>
+          )}
+          
           <ShenaiSdkView style={styles.scannerView} />
-          <TouchableOpacity 
-            style={styles.debugButton} 
-            onPress={sendMockMeasurement}
-            disabled={isSendingMeasurement}
-          >
-            <Text style={styles.debugButtonText}>
-              {isSendingMeasurement ? 'Sending...' : '🧪 Send Mock Data'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.debugButton, { backgroundColor: '#FF6B35', marginTop: 10 }]} 
-            onPress={sendConservativeMockMeasurement}
-            disabled={isSendingMeasurement}
-          >
-            <Text style={styles.debugButtonText}>
-              {isSendingMeasurement ? 'Sending...' : '🧪 Send Conservative Data'}
-            </Text>
-          </TouchableOpacity>
-        </>
+        </View>
       )}
       
       {measurementResults && (
         <View style={styles.resultsContainer}>
           <Text style={styles.resultsTitle}>Measurement Results:</Text>
-          <Text style={styles.resultsText}>HRV: {measurementResults?.hrvSdnnMs} MS</Text>
+          <Text style={styles.resultsText}>Heart Rate: {measurementResults?.heartRate || 'N/A'} BPM</Text>
+          <Text style={styles.resultsText}>HRV SDNN: {measurementResults?.hrvSdnnMs || 'N/A'} ms</Text>
           <Text style={styles.resultsText}>
-            BP: {measurementResults?.systolicBloodPressureMmhg} / {measurementResults?.diastolicBloodPressureMmhg} MMHG
+            BP: {measurementResults?.systolicBloodPressureMmhg || 'N/A'} / {measurementResults?.diastolicBloodPressureMmhg || 'N/A'} mmHg
           </Text>
+          <Text style={styles.resultsText}>Breathing Rate: {measurementResults?.breathingRate || 'N/A'} BPM</Text>
           {measurementSent && (
-            <Text style={styles.sentText}>✅ Sent to OpenMRS</Text>
+            <Text style={styles.sentText}>✅ Successfully sent to OpenMRS</Text>
           )}
+          
+          <TouchableOpacity 
+            style={styles.manualSendButton} 
+            onPress={manualSendMeasurement}
+            disabled={isSendingMeasurement}>
+            <Text style={styles.manualSendButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '📤 Manual Send to OpenMRS'}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
     </SafeAreaView>
@@ -373,13 +323,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  scannerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
   scannerView: {
     flex: 1,
     width: '100%',
   },
   measurementDisplay: {
     position: 'absolute',
-    top: 120,
+    top: 20,
     left: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     padding: 10,
@@ -392,13 +348,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   resultsContainer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     padding: 15,
     borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   resultsTitle: {
     color: 'white',
@@ -429,6 +383,18 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   debugButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  manualSendButton: {
+    marginTop: 10,
+    padding: 12,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  manualSendButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',

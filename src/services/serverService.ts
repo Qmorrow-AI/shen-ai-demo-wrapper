@@ -20,9 +20,6 @@ class ServerService {
       throw new Error('Server URL not configured');
     }
 
-    console.log(`Sending message to: ${this.baseUrl}/shenai/measurements`);
-    console.log(`Message: ${message}`);
-
     const response = await fetch(`${this.baseUrl}/shenai/measurements`, {
       method: 'POST',
       headers: {
@@ -31,10 +28,7 @@ class ServerService {
       body: JSON.stringify({ message }),
     });
 
-    console.log(`Response status: ${response.status}`);
-
     const data = await response.json();
-    console.log(`Response data:`, data);
 
     if (!response.ok) {
       throw new Error(data?.error || 'Unknown server error');
@@ -58,8 +52,6 @@ class ServerService {
       },
     };
 
-    console.log("📦 Sending measurement payload:", JSON.stringify(payload, null, 2));
-
     const response = await fetch(`${this.baseUrl}/shenai/measurements`, {
       method: "POST",
       headers: {
@@ -67,16 +59,12 @@ class ServerService {
       },
       body: JSON.stringify(payload),
     });
-
-    console.log("✅ Response status:", response.status);
     
     if (!response.ok) {
       const errorText = await response.text();
       console.warn("❌ Failed to send Shen-AI data:", errorText);
       throw new Error(`Failed to send measurement data: ${errorText}`);
     }
-
-    console.log("✅ Successfully sent measurement data to server");
   }
 }
 

@@ -14,6 +14,7 @@ const sdkEventEmitter = new NativeEventEmitter(ShenaiSdkNativeModule);
 
 class ShenAIService {
   private eventSubscription: any = null;
+  private onFlowFinishedCallback: ((results: any) => void) | null = null;
 
   async initialize(): Promise<InitializationResult> {
     try {
@@ -21,20 +22,29 @@ class ShenAIService {
       this.eventSubscription = sdkEventEmitter.addListener("ShenAIEvent", (event) => {
         const eventName = event?.EventName;
         if (eventName) {
-          console.log("ShenAI Event:", eventName);
+          // Handle USER_FLOW_FINISHED event
+          if (eventName === "USER_FLOW_FINISHED") {
+            if (this.onFlowFinishedCallback) {
+              this.onFlowFinishedCallback(event);
+            }
+          }
         }
       });
 
       console.log("Initializing Shen AI SDK");
       const result = await initialize(SHENAI_API_KEY, "", {
-        measurementPreset: MeasurementPreset.THIRTY_SECONDS_UNVALIDATED,
+        measurementPreset: 5, // THIRTY_SECONDS_UNVALIDATED
       });
-      console.log("Initialization result", result);
       return result;
     } catch (error) {
       console.error("ShenAI initialization error:", error);
       throw error;
     }
+  }
+
+  // Set callback for when flow finishes
+  setOnFlowFinishedCallback(callback: (results: any) => void) {
+    this.onFlowFinishedCallback = callback;
   }
 
   cleanup() {
@@ -58,7 +68,8 @@ class ShenAIService {
       hrvSdnnMs: results?.hrvSdnnMs ?? undefined,
       systolicBloodPressureMmhg: results?.systolicBloodPressureMmhg ?? undefined,
       diastolicBloodPressureMmhg: results?.diastolicBloodPressureMmhg ?? undefined,
-      heartRate: heartRate ?? undefined,
+      heartRate: results?.heartRateBpm ?? heartRate ?? undefined,
+      breathingRate: results?.breathingRateBpm ?? undefined,
     };
   }
 

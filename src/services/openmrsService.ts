@@ -16,8 +16,6 @@ class OpenMRSService {
       return; // Session already established
     }
 
-    console.log('🔐 Establishing OpenMRS session...');
-    
     const sessionUrl = `${this.credentials.baseUrl}/ws/rest/v1/session`;
     const authString = `${this.credentials.username}:${this.credentials.password}`;
     const authHeader = `Basic ${base64.encode(authString)}`;
@@ -39,12 +37,8 @@ class OpenMRSService {
           const jsessionMatch = setCookieHeader.match(/JSESSIONID=([^;]+)/);
           if (jsessionMatch) {
             this.sessionId = jsessionMatch[1];
-            console.log('✅ Session established with ID:', this.sessionId);
           }
         }
-        
-        // Even if no session ID in cookie, the session is established
-        console.log('✅ OpenMRS session established successfully');
       } else {
         console.error('❌ Failed to establish session:', response.status, response.statusText);
         throw new Error(`Failed to establish session: ${response.status} ${response.statusText}`);
@@ -88,15 +82,11 @@ class OpenMRSService {
       headers['Cookie'] = `JSESSIONID=${this.sessionId}`;
     }
     
-    console.log(`🔐 OpenMRS Request: ${options.method || 'GET'} ${endpoint}`);
-    
     try {
       const response = await fetch(url, {
         ...options,
         headers,
       });
-
-      console.log(`📡 Response: ${response.status} ${response.statusText}`);
       
       if (!response.ok) {
         let errorBody = '';
@@ -143,7 +133,6 @@ class OpenMRSService {
   async getPatientsByLocation(locationUuid: string): Promise<Patient[]> {
     try {
       const data = await this.makeRequest(`/patient?location=${locationUuid}`);
-      console.log(`✅ Fetched ${data.results?.length || 0} patients`);
       return data.results.map((patient: any) => ({
         uuid: patient.uuid,
         given_name: patient.person?.names?.[0]?.givenName || '',
@@ -213,22 +202,10 @@ class OpenMRSService {
           body: JSON.stringify(encounterPayload),
         });
       } catch (encounterError) {
-        console.warn('Failed to create encounter with observations, creating visit without observations:', encounterError);
+        console.error('Failed to create encounter with observations:', encounterError);
         
-        // Try to create encounter without observations as fallback
-        const fallbackEncounterPayload = {
-          patient: visitData.patientUuid,
-          encounterType: "67a71486-1a54-468f-ac3e-7091a9a79584", // Vitals encounter type
-          encounterDatetime: startTime.toISOString(),
-          location: this.credentials.locationUuid || locationUuid || '',
-          visit: visitResponse.uuid,
-          obs: [], // Empty observations
-        };
-        
-        encounterResponse = await this.makeRequest('/encounter', {
-          method: 'POST',
-          body: JSON.stringify(fallbackEncounterPayload),
-        });
+        // Don't create encounter without observations - fail the entire operation
+        throw new Error(`Failed to create encounter: ${encounterError}`);
       }
 
       // End the visit after creating the encounter with a small delay
@@ -263,45 +240,63 @@ class OpenMRSService {
 
   private createObservations(measurements: VisitData['measurements']): any[] {
     const observations = [];
+    
+    console.log("🔍 Creating observations from measurements:", measurements);
 
     // Heart Rate observation - validate range (40-200 BPM)
-    if (measurements.heart_rate_bpm) {
-      const heartRate = Math.max(40, Math.min(200, measurements.heart_rate_bpm));
+    if (measurements.heart_rate_bpm && measurements.heart_rate_bpm > 0) {
+      const heartRate = Math.round(Math.max(40, Math.min(200, measurements.heart_rate_bpm)));
       observations.push({
-        concept: "5087AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Heart Rate concept UUID (corrected)
+        concept: "5087AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Heart Rate concept UUID
         value: heartRate,
       });
+      console.log("✅ Added Heart Rate observation:", heartRate);
+    } else {
+      console.log("⚠️ Skipping Heart Rate - value is missing or invalid:", measurements.heart_rate_bpm);
     }
 
     // Blood Pressure observations - validate ranges
-    if (measurements.blood_pressure_mmhg?.systolic || measurements.blood_pressure_mmhg?.diastolic) {
-      if (measurements.blood_pressure_mmhg.systolic) {
-        // Systolic BP range: 70-250 mmHg
-        const systolic = Math.max(70, Math.min(250, measurements.blood_pressure_mmhg.systolic));
-        observations.push({
-          concept: "5085AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Systolic BP concept UUID (same as Python bridge)
-          value: systolic,
-        });
-      }
-      if (measurements.blood_pressure_mmhg.diastolic) {
-        // Diastolic BP range: 40-150 mmHg
-        const diastolic = Math.max(40, Math.min(150, measurements.blood_pressure_mmhg.diastolic));
-        observations.push({
-          concept: "5086AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Diastolic BP concept UUID (same as Python bridge)
-          value: diastolic,
-        });
-      }
+    if (measurements.blood_pressure_mmhg?.systolic && measurements.blood_pressure_mmhg.systolic > 0) {
+      // Systolic BP range: 70-250 mmHg
+      const systolic = Math.round(Math.max(70, Math.min(250, measurements.blood_pressure_mmhg.systolic)));
+      observations.push({
+        concept: "5085AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Systolic BP concept UUID
+        value: systolic,
+      });
+      console.log("✅ Added Systolic BP observation:", systolic);
+    } else {
+      console.log("⚠️ Skipping Systolic BP - value is missing or invalid:", measurements.blood_pressure_mmhg?.systolic);
+    }
+    
+    if (measurements.blood_pressure_mmhg?.diastolic && measurements.blood_pressure_mmhg.diastolic > 0) {
+      // Diastolic BP range: 40-150 mmHg
+      const diastolic = Math.round(Math.max(40, Math.min(150, measurements.blood_pressure_mmhg.diastolic)));
+      observations.push({
+        concept: "5086AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Diastolic BP concept UUID
+        value: diastolic,
+      });
+      console.log("✅ Added Diastolic BP observation:", diastolic);
+    } else {
+      console.log("⚠️ Skipping Diastolic BP - value is missing or invalid:", measurements.blood_pressure_mmhg?.diastolic);
     }
 
     // Breathing Rate observation - validate range (8-40 BPM)
-    if (measurements.breathing_rate_bpm) {
-      const breathingRate = Math.max(8, Math.min(40, measurements.breathing_rate_bpm));
+    if (measurements.breathing_rate_bpm && measurements.breathing_rate_bpm > 0) {
+      const breathingRate = Math.round(Math.max(8, Math.min(40, measurements.breathing_rate_bpm)));
       observations.push({
-        concept: "5242AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Breathing Rate concept UUID (same as Python bridge)
+        concept: "5242AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", // Breathing Rate concept UUID
         value: breathingRate,
       });
+      console.log("✅ Added Breathing Rate observation:", breathingRate);
+    } else {
+      console.log("⚠️ Skipping Breathing Rate - value is missing or invalid:", measurements.breathing_rate_bpm);
     }
 
+    console.log("📊 Total observations created:", observations.length);
+    if (observations.length === 0) {
+      console.error("❌ No valid observations created - this will cause encounter creation to fail");
+    }
+    
     return observations;
   }
 
@@ -332,7 +327,6 @@ class OpenMRSService {
       }
     }
     
-    console.log(`✅ Fetched ${patients.length}/${patientUUIDs.length} patients`);
     return patients;
   }
 
@@ -340,29 +334,12 @@ class OpenMRSService {
     try {
       // Try a simple endpoint first - just get a single patient
       const data = await this.makeRequest(`/patient/${PATIENT_UUIDS[0]}`);
-      console.log('✅ Connection test successful');
       return true;
     } catch (error) {
       console.error('❌ Connection test failed:', error);
       return false;
     }
   }
-
-  async debugAuth(): Promise<void> {
-    console.log('🔍 Testing authentication...');
-    
-    const authString = `${this.credentials.username}:${this.credentials.password}`;
-    const authHeader = `Basic ${base64.encode(authString)}`;
-    
-    // Test basic fetch functionality
-    try {
-      const testResponse = await fetch('https://httpbin.org/get');
-      console.log('✅ Basic fetch test successful');
-    } catch (error) {
-      console.error('❌ Basic fetch test failed:', error);
-    }
-  }
-
 
 }
 

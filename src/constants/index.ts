@@ -2,13 +2,11 @@ import { Platform } from 'react-native';
 import { ServerOption } from '../types';
 
 export const SERVER_OPTIONS: ServerOption[] = [
-  {label: 'Docker Server (192.168.1.26:13337)', value: 'http://192.168.1.26:13337'},
-  {label: 'Android Emulator (10.0.2.2:3000)', value: 'http://10.0.2.2:3000'},
-  {label: 'iOS Simulator (localhost:3000)', value: 'http://localhost:3000'},
-  {label: 'Custom Address', value: 'custom'},
+  {label: 'Local OpenMRS (192.168.1.26)', value: 'http://192.168.1.26/openmrs'},
+  {label: 'Remote OpenMRS (qmorrow.tojest.dev)', value: 'http://qmorrow.tojest.dev/openmrs'},
 ];
 
-export const DEFAULT_SERVER = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+export const DEFAULT_SERVER = 'http://192.168.1.26/openmrs';
 
 export const SHENAI_API_KEY = "01440e21d73c4f5fa96b46a3539c879e";
 

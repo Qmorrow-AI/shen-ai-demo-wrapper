@@ -6,6 +6,14 @@ export interface MeasurementResult {
   breathingRate?: number;
 }
 
+export interface MeasurementData {
+  heartRate: number;
+  systolicBloodPressureMmhg: number;
+  diastolicBloodPressureMmhg: number;
+  hrvSdnnMs: number;
+  breathingRate: number;
+}
+
 export interface ServerOption {
   label: string;
   value: string;
