@@ -81,7 +81,6 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
     }
 
     if (isSendingMeasurement) {
-      console.log('⏳ Measurement already being sent, skipping...');
       return;
     }
 
@@ -107,10 +106,8 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
       while (attemptCount < MAX_RETRY_ATTEMPTS) {
         try {
           attemptCount++;
-          console.log(`🔄 Attempt ${attemptCount}/${MAX_RETRY_ATTEMPTS} to send measurement to OpenMRS`);
           
           const response = await openmrsService.createVisit(visitData);
-          console.log("✅ Successfully created visit in OpenMRS:", response);
           setMeasurementSent(true);
           Alert.alert('Success', 'Measurement data sent to OpenMRS successfully!');
           
@@ -121,12 +118,9 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
           
           return; // Success, exit the retry loop
         } catch (error) {
-          console.error(`❌ Error sending measurement to OpenMRS (attempt ${attemptCount}/${MAX_RETRY_ATTEMPTS}):`, error);
-          
           // Check if it's a visit overlap error
           const errorMessage = (error as any)?.message || '';
           if (errorMessage.includes('overlap') || errorMessage.includes('Visit.visitCannotOverlapAnotherVisitOfTheSamePatient')) {
-            console.log('🔄 Visit overlap detected, retrying with cleanup...');
             // For overlap errors, we can retry immediately since the service now handles cleanup
             continue;
           }
@@ -140,7 +134,6 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
           } else {
             // Wait a bit before retrying (exponential backoff)
             const delayMs = Math.pow(2, attemptCount) * 1000; // 2s, 4s, 8s
-            console.log(`⏳ Waiting ${delayMs}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, delayMs));
           }
         }
@@ -156,8 +149,6 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
       return;
     }
 
-    console.log("🧪 Sending mock measurement data to OpenMRS");
-    
     const mockResults: MeasurementResult = {
       heartRate: 72,
       systolicBloodPressureMmhg: 118,
@@ -178,8 +169,6 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
       return;
     }
 
-    console.log("🧪 Sending conservative mock measurement data to OpenMRS");
-    
     const mockResults: MeasurementResult = {
       heartRate: 65,
       systolicBloodPressureMmhg: 110,

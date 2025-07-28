@@ -16,6 +16,7 @@ import SettingsScreen from './components/SettingsScreen';
 import PatientSelector from './components/PatientSelector';
 import ShenAIScanner from './components/ShenAIScanner';
 import ServerService from './services/serverService';
+import OpenMRSService from './services/openmrsService';
 
 type AppScreen = 'main' | 'settings' | 'scanner';
 
@@ -99,6 +100,90 @@ function App(): React.JSX.Element {
     setCurrentScreen('scanner');
   };
 
+  const sendMockData = async () => {
+    if (!selectedPatient) {
+      Alert.alert('Error', 'Please select a patient first');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const openmrsService = new OpenMRSService(settings.openmrsCredentials);
+      
+      const mockResults = {
+        heartRate: 72,
+        systolicBloodPressureMmhg: 118,
+        diastolicBloodPressureMmhg: 78,
+        hrvSdnnMs: 42.5,
+        breathingRate: 16,
+      };
+
+      const visitData = {
+        patientUuid: selectedPatient.uuid,
+        measurements: {
+          timestamp: Date.now(),
+          hrv_sdnn_ms: mockResults.hrvSdnnMs,
+          heart_rate_bpm: mockResults.heartRate,
+          breathing_rate_bpm: mockResults.breathingRate,
+          blood_pressure_mmhg: {
+            systolic: mockResults.systolicBloodPressureMmhg,
+            diastolic: mockResults.diastolicBloodPressureMmhg,
+          },
+        },
+      };
+
+      const response = await openmrsService.createVisit(visitData);
+      Alert.alert('Success', 'Mock data sent to OpenMRS successfully!');
+    } catch (error: any) {
+      console.error('Error sending mock data:', error);
+      Alert.alert('Error', `Failed to send mock data: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendConservativeData = async () => {
+    if (!selectedPatient) {
+      Alert.alert('Error', 'Please select a patient first');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const openmrsService = new OpenMRSService(settings.openmrsCredentials);
+      
+      const mockResults = {
+        heartRate: 65,
+        systolicBloodPressureMmhg: 110,
+        diastolicBloodPressureMmhg: 70,
+        hrvSdnnMs: 35.0,
+        breathingRate: 14,
+      };
+
+      const visitData = {
+        patientUuid: selectedPatient.uuid,
+        measurements: {
+          timestamp: Date.now(),
+          hrv_sdnn_ms: mockResults.hrvSdnnMs,
+          heart_rate_bpm: mockResults.heartRate,
+          breathing_rate_bpm: mockResults.breathingRate,
+          blood_pressure_mmhg: {
+            systolic: mockResults.systolicBloodPressureMmhg,
+            diastolic: mockResults.diastolicBloodPressureMmhg,
+          },
+        },
+      };
+
+      const response = await openmrsService.createVisit(visitData);
+      Alert.alert('Success', 'Conservative data sent to OpenMRS successfully!');
+    } catch (error: any) {
+      console.error('Error sending conservative data:', error);
+      Alert.alert('Error', `Failed to send conservative data: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const renderMainScreen = () => (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Medical Service App</Text>
@@ -130,6 +215,21 @@ function App(): React.JSX.Element {
           disabled={loading || !getBaseUrl() || !selectedPatient} 
         />
       </View>
+
+      {selectedPatient && (
+        <View style={styles.buttonContainer}>
+          <Button 
+            title="🧪 Send Mock Data" 
+            onPress={sendMockData} 
+            disabled={loading || !getBaseUrl()} 
+          />
+          <Button 
+            title="🧪 Send Conservative Data" 
+            onPress={sendConservativeData} 
+            disabled={loading || !getBaseUrl()} 
+          />
+        </View>
+      )}
 
       <View style={styles.divider}>
         <Text style={styles.dividerText}>OR</Text>

@@ -31,6 +31,7 @@ export interface Patient {
   gender: string;
   birth_date: string;
   openmrs_location: string;
+  display?: string; // OpenMRS display field
 }
 
 export interface VisitData {

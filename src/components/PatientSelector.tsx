@@ -28,12 +28,6 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
 
   // Create OpenMRSService instance only when credentials change
   const openmrsService = useMemo(() => {
-    console.log('🔄 Creating new OpenMRSService instance with credentials:', {
-      baseUrl: credentials.baseUrl,
-      username: credentials.username,
-      password: credentials.password ? '***' : 'NOT SET',
-      locationUuid: credentials.locationUuid
-    });
     return new OpenMRSService(credentials);
   }, [credentials.baseUrl, credentials.username, credentials.password, credentials.locationUuid]);
 
@@ -41,19 +35,14 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
   useEffect(() => {
     const testConnection = async () => {
       try {
-        console.log('🧪 Testing OpenMRS connection with new credentials...');
         const isConnected = await openmrsService.testConnection();
         if (!isConnected) {
-          console.error('❌ OpenMRS connection test failed');
           Alert.alert(
             'Connection Error', 
             'Failed to connect to OpenMRS. Please check your credentials and server URL.'
           );
-        } else {
-          console.log('✅ OpenMRS connection test successful');
         }
       } catch (error) {
-        console.error('❌ Error testing OpenMRS connection:', error);
         Alert.alert(
           'Connection Error', 
           `Failed to connect to OpenMRS: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -67,21 +56,13 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
   const loadPatients = async () => {
     setLoading(true);
     try {
-      console.log('👥 Loading patients with credentials:', {
-        baseUrl: credentials.baseUrl,
-        username: credentials.username,
-        password: credentials.password ? '***' : 'NOT SET'
-      });
-      
       // Debug authentication first
       await openmrsService.debugAuth();
       
       // Use specific patient UUIDs instead of location-based fetching
       const patientsData = await openmrsService.getPatientsByUUIDs(PATIENT_UUIDS);
       setPatients(patientsData);
-      console.log(`✅ Loaded ${patientsData.length} patients by UUIDs:`, PATIENT_UUIDS);
     } catch (error) {
-      console.error('❌ Error loading patients:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Alert.alert(
         'Error Loading Patients', 
@@ -101,7 +82,8 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
     if (!selectedPatient) {
       return 'Select a patient';
     }
-    return `${selectedPatient.given_name} ${selectedPatient.family_name}`;
+    // Use display field if available, otherwise fall back to given_name + family_name
+    return selectedPatient.display || `${selectedPatient.given_name} ${selectedPatient.family_name}`;
   };
 
   // Always show the patient selector since we have a preset location
@@ -140,7 +122,7 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
                 style={styles.dropdownItem}
                 onPress={() => handlePatientSelect(patient)}>
                 <Text style={styles.dropdownItemText}>
-                  {patient.given_name} {patient.family_name}
+                  {patient.display || `${patient.given_name} ${patient.family_name}`}
                 </Text>
                 <Text style={styles.dropdownItemSubtext}>
                   {patient.gender} • {patient.birth_date}
@@ -154,7 +136,7 @@ const PatientSelector: React.FC<PatientSelectorProps> = ({
       {selectedPatient && (
         <View style={styles.selectedPatientInfo}>
           <Text style={styles.selectedPatientText}>
-            Selected: {selectedPatient.given_name} {selectedPatient.family_name}
+            Selected: {selectedPatient.display || `${selectedPatient.given_name} ${selectedPatient.family_name}`}
           </Text>
           <Text style={styles.selectedPatientSubtext}>
             {selectedPatient.gender} • {selectedPatient.birth_date}

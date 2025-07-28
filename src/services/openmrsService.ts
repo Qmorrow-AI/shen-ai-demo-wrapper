@@ -88,15 +88,7 @@ class OpenMRSService {
       headers['Cookie'] = `JSESSIONID=${this.sessionId}`;
     }
     
-    console.log('🔐 OpenMRS Debug Info:');
-    console.log(`   URL: ${url}`);
-    console.log(`   Username: ${this.credentials.username}`);
-    console.log(`   Password: ${this.credentials.password ? '***' : 'NOT SET'}`);
-    console.log(`   Auth String: ${authString}`);
-    console.log(`   Auth Header: ${authHeader}`);
-    console.log(`   Session ID: ${this.sessionId || 'None'}`);
-    console.log(`   Method: ${options.method || 'GET'}`);
-    console.log(`   Headers:`, headers);
+    console.log(`🔐 OpenMRS Request: ${options.method || 'GET'} ${endpoint}`);
     
     try {
       const response = await fetch(url, {
@@ -104,9 +96,7 @@ class OpenMRSService {
         headers,
       });
 
-      console.log('📡 Response Debug Info:');
-      console.log(`   Status: ${response.status} ${response.statusText}`);
-      console.log(`   Headers:`, Object.fromEntries(response.headers.entries()));
+      console.log(`📡 Response: ${response.status} ${response.statusText}`);
       
       if (!response.ok) {
         let errorBody = '';
@@ -120,8 +110,6 @@ class OpenMRSService {
         // Check if it's an authentication error
         if (response.status === 401) {
           console.error('🔐 Authentication failed. Please check credentials.');
-          console.error('   Expected auth header:', authHeader);
-          console.error('   This should match curl: Basic QWRtaW46QWRtaW4xMjM=');
           
           // Clear session and retry once
           if (this.sessionId) {
@@ -136,8 +124,6 @@ class OpenMRSService {
       }
 
       const data = await response.json();
-      console.log(`   Response Data:`, JSON.stringify(data, null, 2));
-      
       return data;
     } catch (error) {
       console.error('❌ Network error in makeRequest:', error);
@@ -146,7 +132,6 @@ class OpenMRSService {
   }
 
   async getLocations(): Promise<Location[]> {
-    console.log('🏥 Using preset location only...');
     // Always return the preset location, no API call needed
     return [{
       uuid: locationUuid,
@@ -156,10 +141,9 @@ class OpenMRSService {
   }
 
   async getPatientsByLocation(locationUuid: string): Promise<Patient[]> {
-    console.log('👥 Fetching patients for location:', locationUuid);
     try {
       const data = await this.makeRequest(`/patient?location=${locationUuid}`);
-      console.log(`✅ Successfully fetched ${data.results?.length || 0} patients`);
+      console.log(`✅ Fetched ${data.results?.length || 0} patients`);
       return data.results.map((patient: any) => ({
         uuid: patient.uuid,
         given_name: patient.person?.names?.[0]?.givenName || '',
@@ -167,15 +151,10 @@ class OpenMRSService {
         gender: patient.person?.gender || '',
         birth_date: patient.person?.birthdate || '',
         openmrs_location: locationUuid,
+        display: patient.display || `${patient.person?.names?.[0]?.givenName || ''} ${patient.person?.names?.[0]?.familyName || ''}`.trim(),
       }));
     } catch (error) {
       console.error('❌ Error fetching patients:', error);
-      console.error('   Location UUID:', locationUuid);
-      console.error('   Credentials:', {
-        baseUrl: this.credentials.baseUrl,
-        username: this.credentials.username,
-        password: this.credentials.password ? '***' : 'NOT SET'
-      });
       throw error;
     }
   }
@@ -198,7 +177,6 @@ class OpenMRSService {
               stopDatetime: endTime.toISOString(),
             }),
           });
-          console.log(`✅ Ended existing active visit: ${activeVisit.uuid}`);
         } catch (error) {
           console.warn(`⚠️ Failed to end existing visit ${activeVisit.uuid}:`, error);
         }
@@ -332,14 +310,12 @@ class OpenMRSService {
   }
 
   async getPatientsByUUIDs(patientUUIDs: string[]): Promise<Patient[]> {
-    console.log('👥 Fetching specific patients by UUIDs:', patientUUIDs);
     const patients: Patient[] = [];
     
     for (const uuid of patientUUIDs) {
       try {
         // Use a simpler endpoint without v=full to avoid privilege issues
         const data = await this.makeRequest(`/patient/${uuid}`);
-        console.log(`✅ Successfully fetched patient ${uuid}:`, data.person?.names?.[0]?.givenName || 'Unknown');
         
         patients.push({
           uuid: data.uuid,
@@ -348,6 +324,7 @@ class OpenMRSService {
           gender: data.person?.gender || 'Unknown',
           birth_date: data.person?.birthdate || 'Unknown',
           openmrs_location: this.credentials.locationUuid || locationUuid,
+          display: data.display || `${data.person?.names?.[0]?.givenName || 'Unknown'} ${data.person?.names?.[0]?.familyName || 'Unknown'}`.trim(),
         });
       } catch (error) {
         console.error(`❌ Error fetching patient ${uuid}:`, error);
@@ -355,16 +332,15 @@ class OpenMRSService {
       }
     }
     
-    console.log(`✅ Successfully fetched ${patients.length} out of ${patientUUIDs.length} patients`);
+    console.log(`✅ Fetched ${patients.length}/${patientUUIDs.length} patients`);
     return patients;
   }
 
   async testConnection(): Promise<boolean> {
-    console.log('🧪 Testing OpenMRS connection...');
     try {
       // Try a simple endpoint first - just get a single patient
       const data = await this.makeRequest(`/patient/${PATIENT_UUIDS[0]}`);
-      console.log('✅ Connection test successful:', data.uuid ? `Patient ${data.uuid} found` : 'No patient data');
+      console.log('✅ Connection test successful');
       return true;
     } catch (error) {
       console.error('❌ Connection test failed:', error);
@@ -373,31 +349,15 @@ class OpenMRSService {
   }
 
   async debugAuth(): Promise<void> {
-    console.log('🔍 Debugging authentication...');
-    console.log('Credentials:', {
-      baseUrl: this.credentials.baseUrl,
-      username: this.credentials.username,
-      password: this.credentials.password ? '***' : 'NOT SET',
-      locationUuid: this.credentials.locationUuid
-    });
+    console.log('🔍 Testing authentication...');
     
     const authString = `${this.credentials.username}:${this.credentials.password}`;
     const authHeader = `Basic ${base64.encode(authString)}`;
-    console.log('Auth header:', authHeader);
-    console.log('Expected (from curl): Basic QWRtaW46QWRtaW4xMjM=');
-    console.log('Match:', authHeader === 'Basic QWRtaW46QWRtaW4xMjM=' ? '✅' : '❌');
-    
-    // Test URL construction
-    const testUrl = `${this.credentials.baseUrl}/ws/rest/v1/patient/${PATIENT_UUIDS[0]}`;
-    console.log('Test URL:', testUrl);
-    console.log('Expected URL: http://192.168.1.26/openmrs/ws/rest/v1/patient/8e35f9b9-9e4c-4c2a-b52e-e1bcb5857edf');
-    console.log('URL Match:', testUrl === 'http://192.168.1.26/openmrs/ws/rest/v1/patient/8e35f9b9-9e4c-4c2a-b52e-e1bcb5857edf' ? '✅' : '❌');
     
     // Test basic fetch functionality
     try {
-      console.log('🌐 Testing basic fetch functionality...');
       const testResponse = await fetch('https://httpbin.org/get');
-      console.log('✅ Basic fetch test successful:', testResponse.status);
+      console.log('✅ Basic fetch test successful');
     } catch (error) {
       console.error('❌ Basic fetch test failed:', error);
     }
