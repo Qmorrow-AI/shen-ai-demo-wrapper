@@ -28,6 +28,7 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
   const [scannerLoading, setScannerLoading] = useState(false);
   const [measurementSent, setMeasurementSent] = useState(false);
   const [measurementResults, setMeasurementResults] = useState<MeasurementResult | null>(null);
+  const [isSendingMeasurement, setIsSendingMeasurement] = useState(false);
 
   const shenaiService = new ShenAIService();
   const openmrsService = new OpenMRSService(openmrsCredentials);
@@ -45,13 +46,19 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
   }, []);
 
   useEffect(() => {
-    if (results && !measurementSent && selectedPatient) {
+    if (results && !measurementSent && selectedPatient && !isSendingMeasurement) {
       console.log("📡 Sending measurement to OpenMRS", results);
-      const processedResults = shenaiService.processMeasurementResults(results, hr);
+      const processedResults = shenaiService.processMeasurementResults(results, hr || undefined);
       setMeasurementResults(processedResults);
-      sendMeasurementToOpenMRS(processedResults);
+      
+      // Add a small delay to prevent rapid-fire requests
+      const timeoutId = setTimeout(() => {
+        sendMeasurementToOpenMRS(processedResults);
+      }, 1000); // 1 second delay
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [results, measurementSent, selectedPatient]);
+  }, [results, measurementSent, selectedPatient, isSendingMeasurement]);
 
   const initializeShenAiSdk = async () => {
     setScannerLoading(true);
@@ -73,28 +80,118 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
       return;
     }
 
-    try {
-      const visitData = {
-        patientUuid: selectedPatient.uuid,
-        measurements: {
-          timestamp: Date.now(),
-          hrv_sdnn_ms: results.hrvSdnnMs,
-          heart_rate_bpm: results.heartRate,
-          blood_pressure_mmhg: {
-            systolic: results.systolicBloodPressureMmhg,
-            diastolic: results.diastolicBloodPressureMmhg,
-          },
-        },
-      };
-
-      const response = await openmrsService.createVisit(visitData);
-      console.log("✅ Successfully created visit in OpenMRS:", response);
-      setMeasurementSent(true);
-      Alert.alert('Success', 'Measurement data sent to OpenMRS successfully!');
-    } catch (error) {
-      console.error("❌ Error sending measurement to OpenMRS:", error);
-      Alert.alert('Error', 'Failed to send measurement to OpenMRS. Please try again.');
+    if (isSendingMeasurement) {
+      console.log('⏳ Measurement already being sent, skipping...');
+      return;
     }
+
+    setIsSendingMeasurement(true);
+    const MAX_RETRY_ATTEMPTS = 3;
+    let attemptCount = 0;
+
+    const visitData = {
+      patientUuid: selectedPatient.uuid,
+      measurements: {
+        timestamp: Date.now(),
+        hrv_sdnn_ms: results.hrvSdnnMs,
+        heart_rate_bpm: results.heartRate,
+        breathing_rate_bpm: results.breathingRate,
+        blood_pressure_mmhg: {
+          systolic: results.systolicBloodPressureMmhg,
+          diastolic: results.diastolicBloodPressureMmhg,
+        },
+      },
+    };
+
+    try {
+      while (attemptCount < MAX_RETRY_ATTEMPTS) {
+        try {
+          attemptCount++;
+          console.log(`🔄 Attempt ${attemptCount}/${MAX_RETRY_ATTEMPTS} to send measurement to OpenMRS`);
+          
+          const response = await openmrsService.createVisit(visitData);
+          console.log("✅ Successfully created visit in OpenMRS:", response);
+          setMeasurementSent(true);
+          Alert.alert('Success', 'Measurement data sent to OpenMRS successfully!');
+          
+          // Reset after 5 seconds to allow new measurements
+          setTimeout(() => {
+            setMeasurementSent(false);
+          }, 5000);
+          
+          return; // Success, exit the retry loop
+        } catch (error) {
+          console.error(`❌ Error sending measurement to OpenMRS (attempt ${attemptCount}/${MAX_RETRY_ATTEMPTS}):`, error);
+          
+          // Check if it's a visit overlap error
+          const errorMessage = (error as any)?.message || '';
+          if (errorMessage.includes('overlap') || errorMessage.includes('Visit.visitCannotOverlapAnotherVisitOfTheSamePatient')) {
+            console.log('🔄 Visit overlap detected, retrying with cleanup...');
+            // For overlap errors, we can retry immediately since the service now handles cleanup
+            continue;
+          }
+          
+          if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+            // Final attempt failed
+            Alert.alert(
+              'Error', 
+              `Failed to send measurement to OpenMRS after ${MAX_RETRY_ATTEMPTS} attempts. Please check your connection and try again.`
+            );
+          } else {
+            // Wait a bit before retrying (exponential backoff)
+            const delayMs = Math.pow(2, attemptCount) * 1000; // 2s, 4s, 8s
+            console.log(`⏳ Waiting ${delayMs}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+        }
+      }
+    } finally {
+      setIsSendingMeasurement(false);
+    }
+  };
+
+  const sendMockMeasurement = async () => {
+    if (!selectedPatient) {
+      Alert.alert('Error', 'Please select a patient first');
+      return;
+    }
+
+    console.log("🧪 Sending mock measurement data to OpenMRS");
+    
+    const mockResults: MeasurementResult = {
+      heartRate: 72,
+      systolicBloodPressureMmhg: 118,
+      diastolicBloodPressureMmhg: 78,
+      hrvSdnnMs: 42.5,
+      breathingRate: 16,
+    };
+
+    // Set the mock results to display them
+    setMeasurementResults(mockResults);
+    
+    await sendMeasurementToOpenMRS(mockResults);
+  };
+
+  const sendConservativeMockMeasurement = async () => {
+    if (!selectedPatient) {
+      Alert.alert('Error', 'Please select a patient first');
+      return;
+    }
+
+    console.log("🧪 Sending conservative mock measurement data to OpenMRS");
+    
+    const mockResults: MeasurementResult = {
+      heartRate: 65,
+      systolicBloodPressureMmhg: 110,
+      diastolicBloodPressureMmhg: 70,
+      hrvSdnnMs: 35.0,
+      breathingRate: 14,
+    };
+
+    // Set the mock results to display them
+    setMeasurementResults(mockResults);
+    
+    await sendMeasurementToOpenMRS(mockResults);
   };
 
   return (
@@ -126,12 +223,48 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
           <TouchableOpacity style={styles.retryButton} onPress={initializeShenAiSdk}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.debugButton} 
+            onPress={sendMockMeasurement}
+            disabled={isSendingMeasurement}
+          >
+            <Text style={styles.debugButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '🧪 Send Mock Data (Debug)'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.debugButton, { backgroundColor: '#FF6B35', marginTop: 10 }]} 
+            onPress={sendConservativeMockMeasurement}
+            disabled={isSendingMeasurement}
+          >
+            <Text style={styles.debugButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '🧪 Send Conservative Data'}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
       
       {initResult === null && !scannerLoading && (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Initializing...</Text>
+          <TouchableOpacity 
+            style={styles.debugButton} 
+            onPress={sendMockMeasurement}
+            disabled={isSendingMeasurement}
+          >
+            <Text style={styles.debugButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '🧪 Send Mock Data'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.debugButton, { backgroundColor: '#FF6B35', marginTop: 10 }]} 
+            onPress={sendConservativeMockMeasurement}
+            disabled={isSendingMeasurement}
+          >
+            <Text style={styles.debugButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '🧪 Send Conservative Data'}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
       
@@ -141,8 +274,28 @@ const ShenAIScanner: React.FC<ShenAIScannerProps> = ({
         </View>
       )}
       
-      {initResult === InitializationResult.OK && (
-        <ShenaiSdkView style={styles.scannerView} />
+      {initResult === 0 && (
+        <>
+          <ShenaiSdkView style={styles.scannerView} />
+          <TouchableOpacity 
+            style={styles.debugButton} 
+            onPress={sendMockMeasurement}
+            disabled={isSendingMeasurement}
+          >
+            <Text style={styles.debugButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '🧪 Send Mock Data'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.debugButton, { backgroundColor: '#FF6B35', marginTop: 10 }]} 
+            onPress={sendConservativeMockMeasurement}
+            disabled={isSendingMeasurement}
+          >
+            <Text style={styles.debugButtonText}>
+              {isSendingMeasurement ? 'Sending...' : '🧪 Send Conservative Data'}
+            </Text>
+          </TouchableOpacity>
+        </>
       )}
       
       {measurementResults && (
@@ -274,6 +427,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     marginTop: 8,
+  },
+  debugButton: {
+    position: 'absolute',
+    bottom: 80,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FF9500',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  debugButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

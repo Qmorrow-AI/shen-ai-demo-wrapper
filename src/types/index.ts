@@ -3,6 +3,7 @@ export interface MeasurementResult {
   systolicBloodPressureMmhg?: number;
   diastolicBloodPressureMmhg?: number;
   heartRate?: number;
+  breathingRate?: number;
 }
 
 export interface ServerOption {
@@ -38,6 +39,7 @@ export interface VisitData {
     timestamp: number;
     hrv_sdnn_ms?: number;
     heart_rate_bpm?: number;
+    breathing_rate_bpm?: number;
     blood_pressure_mmhg?: {
       systolic?: number;
       diastolic?: number;
